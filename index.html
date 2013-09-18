@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Wann aufs Amt?</title>
+<meta charset="utf-8"/>
+<style>
+body {
+  font-family: open-sans, helvetica, sans;
+  }
+
+div.text {
+  font-family: garamond, serif;
+  }
+g.data {
+  opacity: 0.2;
+  }
+g.data:hover {
+  opacity: 1 }
+
+g.data:hover > circle, g.selected > circle {
+  stroke: #00F;
+  }
+
+
+g > circle  {
+  fill: none;
+  stroke: rgb(255,20,20);
+  stroke-width: 2px;
+  }
+
+g.axis > path{
+  fill: none }
+
+g.tick > line {
+  stroke: #000;
+  stroke-width: 1px;
+  }
+rect.legend {
+  fill: none;
+  stroke: #CCC;
+  stroke-width: 1px;
+  stroke-dasharray: 3,3;
+  }
+
+div.content {
+  width: 1000px;
+  margin-left: auto;
+  margin-right: auto;
+  }
+
+ul#control > li:hover, ul#control > li.selected {
+  background: #00F;
+  color: white;
+  }
+ul#control > li {
+  display: inline-block;
+  width: 44px;
+  background: rgba(255,20,20,0.2);
+  text-align: center;
+  margin: 2px;
+  padding: 2px;
+  border-radius: 2px;
+  font-size: 90%;
+  }
+
+ul#control {
+  list-style: none;
+  padding: 0px;
+  }
+
+</style>
+<body>
+<div class="content">
+<h1>Wann aufs Meldeamt?</h1>
+<div id="graph">
+</div>
+<h2>Bezirksamt</h2>
+<ul id="control">
+</ul>
+<div class="text">
+<p>
+Die Magistratischen Bezirksämter in Wien publizieren die Wartezeiten für
+die Meldestellen. Die obenliegende Grafik zeigt die Durchschnittlichen
+Wartezeiten für die Meldestellen nach Stunden und Tagen.  Mittwoch und
+Donnerstag Vormittag scheinen die besten Zeiten zu sein, aufs Meldeamt zu
+gehen.
+</p>
+<p>
+Einzelne Bezirksämter können in der Auswahl unten angewählt werden, die
+dazugehörigen Wartezeiten erscheinen dann in der Grafik hervorgehoben. 
+</p>
+<p>
+Umsetzung: <a href="http://tentacleriot.eu/about.html">Michael Bauer</a>
+mit Daten der <a href="http://www.wien.gv.at/mba/mba.html">Magistratischen
+Bezirksämter</a> Wiens. (<a href="https://scraperwiki.com/dataset/guvh44q">Datensatz</a>)
+</p>
+</div>
+</div>
+
+<script src="vendor/js/d3.v3.min.js"></script>
+<script src="vendor/js/underscore-min.js"></script>
+<script>
+
+var days=["Mo","Di","Mi","Do","Fr"]
+var width=1000;
+var height=500;
+var min_r=2;
+var max_r=30;
+distance=50;
+
+svg=d3.select("#graph").append("svg")
+  .attr("width",width)
+  .attr("height",height)
+
+function select(d) {
+  if (d3.select("#control-"+d).attr("class")=="selected")
+    {
+    d3.select("#control-"+d).attr("class","");
+    d3.select("#group-"+d).attr("class","data");
+    }
+  else {
+    d3.selectAll("#control > li").attr("class","");
+    d3.selectAll("g.selected").attr("class","data")
+    d3.select("#control-"+d).attr("class","selected");
+    d3.select("#group-"+d).attr("class", "selected");
+    }
+  }
+d3.json("https://free-ec2.scraperwiki.com/guvh44q/476f29bbf7b043b/sql/?q=select%20%0A%20%20%20%20sum(wait)%2Fcount(wait)%20as%20wait%2C%0A%09mba%2C%0A%20%20%20%20hour%2C%0A%20%20%20%20weekday%0Afrom%20swdata%0Awhere%20service%3D%22meldeservice%22%20%0Agroup%20by%20mba%2C%20hour%2C%20weekday%0A--%20limit%2020", 
+  function(d) {
+    console.log(d[0]);
+    waits=_.map(d,function(d) { return d.wait })
+    wds=_.map(d,function(d) { return d.weekday})
+    hrs=_.map(d,function(d) { return d.hour})
+
+    console.log(_.uniq(wds))
+
+    rscale=d3.scale.sqrt()
+      .domain([_.min(waits),_.max(waits)])
+      .range([min_r,max_r])
+
+    yscale=d3.scale.linear()
+      .domain([_.min(wds),_.max(wds)])
+      .range([distance,height-distance])
+
+    xscale=d3.scale.linear()
+      .domain([_.min(hrs),_.max(hrs)])
+      .range([distance,width-distance])
+
+    xaxis=d3.svg.axis()
+            .scale(xscale)
+            .orient("bottom")
+            .ticks(10)
+            .tickValues([8,9,10,11,12,13,14,15,16,17])
+    yaxis=d3.svg.axis()
+            .scale(yscale)
+            .orient("left")
+            .ticks(5)
+            .tickValues([0,1,2,3,4])
+            .tickFormat(function(d) { return days[d] })
+
+      d=_.map(d,function(d) { d.r=rscale(d.wait); 
+                              d.x=xscale(d.hour);
+                              d.y=yscale(d.weekday);
+                              return d;
+                              });
+      d=_.values(_.reduce(d,function(x,y) {
+        if (x[y.mba]) {
+          x[y.mba].push(y);
+          }
+       else  {
+        x[y.mba]=[y];
+        }
+       return x;
+        },{}));
+
+    mbas=_.map(d,function(d) { return d[0].mba })
+    
+    svg.append("g")
+      .attr("class","axis")
+      .attr("transform","translate("+[0,height-20]+")")
+      .call(xaxis)
+    
+    svg.append("g")
+      .attr("class","axis")
+      .attr("transform","translate("+[30,0]+")")
+      .call(yaxis)
+    
+    legend=svg.append("g")
+      .attr("transform","translate("+[width-distance-150,15]+")")
+
+    legend.append("rect")
+      .attr("class","legend")
+      .attr("x",0)
+      .attr("y",0)
+      .attr("width",150)
+      .attr("height",120)
+    
+    legend.append("circle")
+      .attr("cx",10+max_r)
+      .attr("cy",10+max_r)
+      .attr("r",max_r)
+    
+    legend.append("circle")
+      .attr("cx",110)
+      .attr("cy",10+max_r)
+      .attr("r",min_r)
+    
+    legend.append("text")
+      .attr("x",10+max_r)
+      .attr("y",max_r*2+30)
+      .attr("text-anchor","middle")
+      .text(_.max(waits))
+    
+    legend.append("text")
+      .attr("x",110)
+      .attr("y",max_r*2+30)
+      .attr("text-anchor","middle")
+      .text(_.min(waits))
+
+    legend.append("text")
+      .attr("x",75)
+      .attr("y",max_r*2+50)
+      .attr("text-anchor","middle")
+      .text("Minuten Wartezeit")
+
+    svg.selectAll("g.data")
+      .data(d)
+      .enter()
+      .append("g")
+      .attr("id",function(d) {
+        return "group-"+d[0].mba })
+      .attr("class","data")
+      .on("click",function(d) {
+        select(d[0].mba)
+        })
+
+    svg.selectAll("g.data")
+      .selectAll("circle")
+      .data(function(d) {return d})
+      .enter()
+      .append("circle")
+      .attr("cx",function(d) { return d.x})
+      .attr("cy",function(d) { return d.y})
+      .attr("r",function(d) {return d.r})
+      .append("title")
+      .text(function(d) {
+        return "Magistratisches Bezirksamt "+d.mba+" : "+d.wait+
+        " Minuten Wartezeit"
+        })
+
+    d3.select("#control")
+      .selectAll("li")
+      .data(mbas)
+      .enter()
+      .append("li")
+      .attr("id",function(d) { return "control-"+d })
+      .text(function(d) { return d.replace("_","&"); })
+      .on("click",select)
+      
+    
+    })
+</script>
+
+
+</body>
